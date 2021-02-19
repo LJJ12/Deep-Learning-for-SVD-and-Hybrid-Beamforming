@@ -12,8 +12,9 @@ import tensorflow as tf
 from keras.layers import LeakyReLU, ELU
 import math as matt
 import tensorflow_probability as tfp
+import time
 
-
+time_start=time.time()
 def log2(x):
     numerator = tf.log(x)
     denominator = tf.log(tf.constant(2, dtype=numerator.dtype))
@@ -160,15 +161,14 @@ def model(input_shape, input_shape2, n_y):
     X3 = Flatten()(X_input3)
 
     X = ZeroPadding2D((7, 7))(X_input)
-    demo1 = X
+
     # Currently 2 convolutional layers are active.
     X = Conv2D(32, (3, 3), strides=(1, 1), name='conv0')(X)
-    demo2 = X
+
     X = ELU(alpha=1.0)(X) # alpha: 负因子的尺度
 
     X = Conv2D(64, (3, 3), strides=(1, 1), name='conv1')(X)
     X = ELU(alpha=1.0)(X)
-    demo3 = X
 
     # X = Conv2D(64, (3, 3), strides = (1, 1), name = 'conv2')(X)
     # X = ELU(alpha=1.0)(X)
@@ -187,36 +187,36 @@ def model(input_shape, input_shape2, n_y):
     X = Dropout(0.2)(X)
     # Flatten层用来将输入“压平”，即把多维的输入一维化，常用在从卷积层到全连接层的过渡。Flatten不影响batch的大小
     X = Flatten()(X)
-
     # Unconstrained estimated RF precoder (T_RF), baseband precoder (T_BB), RF combiner (R_RF), baseband combiner (R_BB)
 
-
-    # todo 这个地方  需要将 X从float32转换为int32
-    # X = tf.cast(X, tf.int32)
+    # 以下四个自定义的网络层 拼接之后形成全连接层
 
     T_RF = Dense(n_y - 2 * L)(X)
     T_RF = ELU(alpha=1.0)(T_RF)
     T_RF = Dropout(0.1)(T_RF)
-    T_RF = Dense((n_y - 2 * L) / 4, activation='sigmoid')(T_RF)
+    temp = L
+    demo = (n_y - 2 * L) / 4
+    T_RF = Dense((int)((n_y - 2 * L) / 4), activation='sigmoid')(T_RF)
 
     T_BB = Dense(n_y - 2 * L)(X)
     T_BB = ELU(alpha=1.0)(T_BB)
     T_BB = Dropout(0.1)(T_BB)
-    T_BB = Dense((n_y - 2 * L) / 2, activation='linear')(T_BB)
+    T_BB = Dense((int)((n_y - 2 * L) / 2), activation='linear')(T_BB)
 
     R_RF = Dense(n_y - 2 * L)(X)
     R_RF = ELU(alpha=1.0)(R_RF)
     R_RF = Dropout(0.1)(R_RF)
-    R_RF = Dense((n_y - 2 * L) / 4, activation='sigmoid')(R_RF)
+    R_RF = Dense((int)((n_y - 2 * L) / 4), activation='sigmoid')(R_RF)
 
     R_BB = Dense(n_y - 2 * L)(X)
     R_BB = ELU(alpha=1.0)(R_BB)
     R_BB = Dropout(0.1)(R_BB)
-    R_BB = Dense((n_y - 2 * L) / 2, activation='linear')(R_BB)
+    R_BB = Dense((int)((n_y - 2 * L) / 2), activation='linear')(R_BB)
 
     # 8
     X_temp = Dense(2 * L, activation='linear')(X)
-    #
+
+    # 拼接成FC的张量  ，使用lambda来自定义成FC层
     X_in = concatenate([X_temp, T_RF, T_BB, R_RF, R_BB], axis=1)
 
     # myFunc consists of quantization and normalization layers, generate concatenated constrained T_RF, T_BB, R_RF, R_BB.
@@ -528,5 +528,6 @@ np.savetxt('rate_with_train_data.csv', final_rate_log_train, delimiter=",", fmt=
 
 np.savetxt('loss_with_train_data.csv', final_loss_log_train, delimiter=",", fmt="%s")
 np.savetxt('loss_with_test_data.csv', final_loss_log_test, delimiter=",", fmt="%s")
-
 model_out.save_weights("model.h5")
+time_end=time.time()
+print('time cost',time_end-time_start,'s')
