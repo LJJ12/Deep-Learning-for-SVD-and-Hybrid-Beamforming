@@ -14,7 +14,9 @@ import math as matt
 import tensorflow_probability as tfp
 import time
 
-time_start=time.time()
+time_start = time.time()
+
+
 def log2(x):
     numerator = tf.log(x)
     denominator = tf.log(tf.constant(2, dtype=numerator.dtype))
@@ -163,9 +165,11 @@ def model(input_shape, input_shape2, n_y):
     X = ZeroPadding2D((7, 7))(X_input)
 
     # Currently 2 convolutional layers are active.
+    # filters 整数，输出空间的维度 （即卷积中滤波器的输出数量）
+    # kernel_size 一个整数，或者2个整数表示的元组或列表， 指明2D卷积窗口的宽度和高度。 可以是一个整数，为所有空间维度指定相同的值
+    # strides: 一个整数，或者2个整数表示的元组或列表， 指明卷积沿宽度和高度方向的步长
     X = Conv2D(32, (3, 3), strides=(1, 1), name='conv0')(X)
-
-    X = ELU(alpha=1.0)(X) # alpha: 负因子的尺度
+    X = ELU(alpha=1.0)(X)  # alpha: 负因子的尺度
 
     X = Conv2D(64, (3, 3), strides=(1, 1), name='conv1')(X)
     X = ELU(alpha=1.0)(X)
@@ -182,39 +186,38 @@ def model(input_shape, input_shape2, n_y):
     # X = Conv2D(128, (3, 3), strides = (1, 1), name = 'conv5')(X)
     # X = ELU(alpha=1.0)(X)
 
-    # MAXPOOL
+    # pool_size: 整数，或者 2 个整数表示的元组， 沿（垂直，水平）方向缩小比例的因数。 （2，2）会把输入张量的两个维度都缩小一半。 如果只使用一个整数，那么两个维度都会使用同样的窗口长度。
     X = MaxPooling2D((2, 2), name='max_pool')(X)
     X = Dropout(0.2)(X)
     # Flatten层用来将输入“压平”，即把多维的输入一维化，常用在从卷积层到全连接层的过渡。Flatten不影响batch的大小
     X = Flatten()(X)
-    # Unconstrained estimated RF precoder (T_RF), baseband precoder (T_BB), RF combiner (R_RF), baseband combiner (R_BB)
 
-    # 以下四个自定义的网络层 拼接之后形成全连接层
+    # 自定义全连接层
+    X_temp = Dense(2 * L, activation='linear')(X)
+    # Unconstrained estimated RF precoder (T_RF), baseband precoder (T_BB), RF combiner (R_RF), baseband combiner (R_BB)
+    # 以下四个自定义的网络层 拼接之后形成全连接层  rf-chains 都使用的linear
 
     T_RF = Dense(n_y - 2 * L)(X)
     T_RF = ELU(alpha=1.0)(T_RF)
     T_RF = Dropout(0.1)(T_RF)
-    temp = L
-    demo = (n_y - 2 * L) / 4
-    T_RF = Dense((int)((n_y - 2 * L) / 4), activation='sigmoid')(T_RF)
+    T_RF = Dense(((n_y - 2 * L) // 4), activation='sigmoid')(T_RF)
 
     T_BB = Dense(n_y - 2 * L)(X)
     T_BB = ELU(alpha=1.0)(T_BB)
     T_BB = Dropout(0.1)(T_BB)
-    T_BB = Dense((int)((n_y - 2 * L) / 2), activation='linear')(T_BB)
+    T_BB = Dense(((n_y - 2 * L) // 2), activation='linear')(T_BB)
 
     R_RF = Dense(n_y - 2 * L)(X)
     R_RF = ELU(alpha=1.0)(R_RF)
     R_RF = Dropout(0.1)(R_RF)
-    R_RF = Dense((int)((n_y - 2 * L) / 4), activation='sigmoid')(R_RF)
+    R_RF = Dense(((n_y - 2 * L) // 4), activation='sigmoid')(R_RF)
 
     R_BB = Dense(n_y - 2 * L)(X)
     R_BB = ELU(alpha=1.0)(R_BB)
     R_BB = Dropout(0.1)(R_BB)
-    R_BB = Dense((int)((n_y - 2 * L) / 2), activation='linear')(R_BB)
+    R_BB = Dense(((n_y - 2 * L) // 2), activation='linear')(R_BB)
 
-    # 8
-    X_temp = Dense(2 * L, activation='linear')(X)
+
 
     # 拼接成FC的张量  ，使用lambda来自定义成FC层
     X_in = concatenate([X_temp, T_RF, T_BB, R_RF, R_BB], axis=1)
@@ -230,21 +233,25 @@ def model(input_shape, input_shape2, n_y):
 
 
 # Use 1-bit phase shifters and piece-wise linear approximations based quantization
+# 量化处理  将
 def myFunc(x_in):
     Nq_bits = 1  # number of bit in phase shifter
     alpha = temp_alpha  # this value determines the region which is defined by a piece-wise linear function.
     N_S = L
 
     Num_directions = pow(2, Nq_bits)  # 2^(N_q)
+    # 切分开各个全连接层
+    # X_in = concatenate([X_temp, T_RF, T_BB, R_RF, R_BB], axis=1)
     x_temp = x_in[:, 0:2 * L]
+    # 其中R可以由Topt = TRFTBB和Ropt = RRFRBB求得
     T_RF = x_in[:, 2 * L:2 * L + N_T * L_T]
     T_BB = x_in[:, 2 * L + N_T * L_T:2 * L + N_T * L_T + 2 * N_S * L_T]
     R_RF = x_in[:, 2 * L + N_T * L_T + 2 * N_S * L_T:2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R]
-    R_BB = x_in[:,
-           2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R:2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R + 2 * N_S * L_R]
+    R_BB = x_in[:,2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R:2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R + 2 * N_S * L_R]
 
     sigma_hat = x_temp
 
+    # 实数部分和虚数部分 从0开始 步长为2=>偶数部分
     T_BB_real = T_BB[:, 0::2]
     T_BB_imag = T_BB[:, 1::2]
 
@@ -258,10 +265,14 @@ def myFunc(x_in):
     kq = T_RF_angle_rad / (2 * tf.constant(matt.pi) / Num_directions)
 
     # Phase values in this region are rounded to 0.
+    # 返回不大于 x 的元素最大整数.  阶跃函数
+    # 根据condition返回x或y中的元素.
     kq_new = tf.where(kq <= 1 - alpha, tf.floor(kq), kq)
 
-    # Depending on alpha value, phase values between (i-alpha) and (i+alpha) are kept same, otherwise rounded to largest integer value smaller than itself. Here, i=1,..,2^N_q-1
+    # Depending on alpha value, phase values between (i-alpha) and (i+alpha) are kept same,
+    # otherwise rounded to largest integer value smaller than itself. Here, i=1,..,2^N_q-1
     for i in range(Num_directions - 2):
+        # 逻辑与运算
         kq_new = tf.where(tf.logical_and(kq > ((i + 1) + alpha), kq <= ((i + 2) - alpha)), tf.floor(kq), kq_new)
 
     # If phase values are between 2^N_q-1 and 2^n_Q, they are kept same.
@@ -270,8 +281,8 @@ def myFunc(x_in):
     # Transform phase values to between 0 and 2*pi
     T_RF_angle_rad = kq_new * (2 * tf.constant(matt.pi) / Num_directions)
 
-    T_RF = tf.sqrt(tf.cast((1.0 / N_T), dtype=tf.complex64)) * tf.exp(tf.complex(0.0,
-                                                                                 T_RF_angle_rad))  # Complex elements of T_RF are constructed with calculated phase value and constant modulus=(1/sqrt(N_T))
+    T_RF = tf.sqrt(tf.cast((1.0 / N_T), dtype=tf.complex64)) * tf.exp(tf.complex(0.0,T_RF_angle_rad))  # Complex elements of T_RF are constructed with calculated phase
+                                                                                                        # value and constant modulus=(1/sqrt(N_T))
 
     # Transform phase values to between 0 and 2^n_Q
     R_RF_angle_rad = 2 * tf.constant(matt.pi) * (R_RF)
@@ -280,7 +291,8 @@ def myFunc(x_in):
     # Phase values in this region are rounded to 0.
     kq_new = tf.where(kq <= 1 - alpha, tf.floor(kq), kq)
 
-    # Depending on alpha value, phase values between (i-alpha) and (i+alpha) are kept same, otherwise rounded to largest integer value smaller than itself. Here, i=1,..,2^N_q-1
+    # Depending on alpha value, phase values between (i-alpha) and (i+alpha) are kept same,
+    # otherwise rounded to largest integer value smaller than itself. Here, i=1,..,2^N_q-1
     for i in range(Num_directions - 2):
         kq_new = tf.where(tf.logical_and(kq > ((i + 1) + alpha), kq <= ((i + 2) - alpha)), tf.floor(kq), kq_new)
 
@@ -289,8 +301,7 @@ def myFunc(x_in):
 
     # Transform phase values to between 0 and 2*pi
     R_RF_angle_rad = kq_new * (2 * tf.constant(matt.pi) / Num_directions)
-    R_RF = tf.sqrt(tf.cast((1.0 / N_R), dtype=tf.complex64)) * tf.exp(tf.complex(0.0,
-                                                                                 R_RF_angle_rad))  # Complex elements of R_RF are constructed with calculated phase value and constant modulus=(1/sqrt(N_R))
+    R_RF = tf.sqrt(tf.cast((1.0 / N_R), dtype=tf.complex64)) * tf.exp(tf.complex(0.0,R_RF_angle_rad))  # Complex elements of R_RF are constructed with calculated phase value and constant modulus=(1/sqrt(N_R))
 
     # T_RF is constructed as matrix
     T_RF_tmp = []
@@ -304,8 +315,9 @@ def myFunc(x_in):
         R_RF_tmp.append(R_RF[:, i * N_R:(i + 1) * N_R])
 
     # R_RF is constructed as matrix
+    # 将秩为R的张量列表堆叠成一个秩为(R + 1)的张量.
     R_RF_tmp = tf.stack(R_RF_tmp, axis=2)
-
+    # 将两个实数转换为复数.
     T_BB = tf.complex(T_BB_real[:, :], T_BB_imag[:, :])
     R_BB = tf.complex(R_BB_real[:, :], R_BB_imag[:, :])
 
@@ -315,7 +327,7 @@ def myFunc(x_in):
     for i in range(N_S):
         T_BB_tmp.append(T_BB[:, i * L_T:(i + 1) * L_T])
         R_BB_tmp.append(R_BB[:, i * L_R:(i + 1) * L_R])
-
+    # todo 维度确认  初始(A,B,C) => (A,B,N,C)
     T_BB_tmp = tf.stack(T_BB_tmp, axis=2)
     R_BB_tmp = tf.stack(R_BB_tmp, axis=2)
 
@@ -341,7 +353,7 @@ def myFunc(x_in):
     return out
 
 
-# 参照fig1  L -> Lt->Nt->Nr->Lr
+# figure 1
 L_T = 4  # Number of RF chains in transmitter RF precoder
 N_T = 4  # Number of transmitter antennas
 N_R = 4  # Number of receiver antennas
@@ -351,7 +363,7 @@ L = 4  # Number of data streams
 # Obtains train and test 4-by-4 channel matrices
 # generated using geometric channel model
 # paper 11页  声明了
-# Each of the three proposed DNNs for computing the SVD gets the matrix with a size of NR× 2NTas the input.
+# Each of the three proposed DNNs for computing the SVD gets the matrix with a size of NR× 2NT as the input.
 #
 # 40000*4*8     40000*4*（2*4）
 C_train = np.load('../../../../../Dataset/C_44_train.npy')
@@ -364,7 +376,6 @@ Y_train = np.load('../../../../../Dataset/Y_44_train.npy')
 #  40000*32
 Z_train = np.load('../../../../../Dataset/Z_44_train.npy')
 
-
 # （10000，4，8）
 C_test = np.load('../../../../../Dataset/C_44_test.npy')
 #  （10000，32）
@@ -376,7 +387,6 @@ Y_test = np.load('../../../../../Dataset/Y_44_test.npy')
 # （10000，32）
 Z_test = np.load('../../../../../Dataset/Z_44_test.npy')
 
-
 # （40000，4，8）
 temp_X_train = X_train
 # （40000，72）
@@ -386,59 +396,51 @@ temp_Z_train = Z_train
 
 # （10000，4，8）
 temp_X_Test = X_test
-# （40000，72）
+# （10000，72）
 temp_Y_Test = Y_test
-# （40000，32）
+# （10000，32）
 temp_Z_Test = Z_test
-
 
 # （40000，4，8）
 temp_H = C_train
 # （40000，32）
 temp_H_out = D_train
 # （10000，4，8）
-temp_HTest = C_test
+temp_H_Test = C_test
 # （10000，32）
-temp_HTest_out = D_test
+temp_H_Test_out = D_test
 
-# 40000 4 8
-m, n_H, n_W = temp_X_train.shape
-# 10000  8 8  占位符
+
+m_train, n_H, n_W = temp_X_train.shape
 m_test, _, _ = temp_X_Test.shape
 
-
 # Prepare input and output for training data.
-shape_X = (m, n_H, n_W, 1)
-
+shape_X = (m_train, n_H, n_W, 1)
 X_train2 = np.zeros(shape_X)  # This input stores real channel matrix normalized to values between -1 and 1,
 # this is given to the DNN as the input.
 # todo 多出来的一维度 是由单个元素充当的 如果遗忘了 调式模式 鼠标悬浮后可以查看
 X_train2[:, :, :, 0] = temp_X_train
-
-Z_train2 = np.zeros((m, n_H * n_W, 1))# This input stores each rank-1 approximation of channel matrix seperately.
+Z_train2 = np.zeros((m_train, n_H * n_W, 1))  # This input stores each rank-1 approximation of channel matrix seperately.
 Z_train2[:, :, 0] = np.squeeze(temp_Z_train)
+# 从数组的形状中删除单维度条目，即把shape中为1的维度去掉
+# todo Z_train2_out=temp_Z_train
 Z_train2_out = np.squeeze(Z_train2[:, :, 0])
-
 Y_train2 = np.squeeze(temp_Y_train)  # Output for the DNN, this has singular values and vectors for given channel matrix.
-
 H_train2 = np.zeros(shape_X)
 H_train2[:, :, :, 0] = temp_H  # This input stores real channel matrix, it is used for estimating rate.
 H_train2_out = np.squeeze(temp_H_out)  # This output stores real channel matrix, it is used for estimating rate.
 
-
-
-
 # Prepare input and output for test data.
-shape_XTest = (m_test, n_H, n_W, 1)
-X_test2 = np.zeros(shape_XTest)  # This input stores real channel matrix normalized to values between -1 and 1, this is given to the DNN as the input.
+shape_X_Test = (m_test, n_H, n_W, 1)
+X_test2 = np.zeros(shape_X_Test)  # This input stores real channel matrix normalized to values between -1 and 1, this is given to the DNN as the input.
 X_test2[:, :, :, 0] = temp_X_Test
 Z_test2 = np.zeros((m_test, n_H * n_W, 1))
 Z_test2[:, :, 0] = np.squeeze(temp_Z_Test)  # This input stores each rank-1 approximation of channel matrix seperately.
 Z_test2_out = np.squeeze(Z_test2[:, :, 0])
 Y_test2 = np.squeeze(temp_Y_Test)  # Output for the DNN, this has singular values and vectors for given channel matrix.
-H_test2 = np.zeros(shape_XTest)
-H_test2[:, :, :, 0] = temp_HTest  # This input stores real channel matrix, it is used for estimating rate.
-H_test2_out = np.squeeze(temp_HTest_out)  # This output stores real channel matrix, it is used for estimating rate.
+H_test2 = np.zeros(shape_X_Test)
+H_test2[:, :, :, 0] = temp_H_Test  # This input stores real channel matrix, it is used for estimating rate.
+H_test2_out = np.squeeze(temp_H_Test_out)  # This output stores real channel matrix, it is used for estimating rate.
 
 input_shape3 = (n_H, n_W, 1)
 input_shape33 = (n_H * n_W, 1)
@@ -529,5 +531,5 @@ np.savetxt('rate_with_train_data.csv', final_rate_log_train, delimiter=",", fmt=
 np.savetxt('loss_with_train_data.csv', final_loss_log_train, delimiter=",", fmt="%s")
 np.savetxt('loss_with_test_data.csv', final_loss_log_test, delimiter=",", fmt="%s")
 model_out.save_weights("model.h5")
-time_end=time.time()
-print('time cost',time_end-time_start,'s')
+time_end = time.time()
+print('time cost', time_end - time_start, 's')
