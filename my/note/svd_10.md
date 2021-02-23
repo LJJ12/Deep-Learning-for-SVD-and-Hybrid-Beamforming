@@ -41,3 +41,91 @@ numpy 兼容性
 其他区别：1、如果轴为 None, 则将扁平的张量视为向量,而不考虑秩.2、明确支持 "euclidean" 范数作为默认值,包括高阶张量
 
 #### tf.expand_dims
+
+```
+import tensorflow as tf
+x =  tf.constant([[[1,2],[3,4]],
+                 [[5,6],[7,8]]])
+with tf.Session():
+    print(x.shape)
+    print(x.eval())
+    
+y = tf.expand_dims(x,1)
+with tf.Session():
+    print(y.shape)
+    print(y.eval()) 
+    
+z = tf.expand_dims(x,0)
+with tf.Session():
+    print(z.shape)
+```
+
+
+
+
+
+
+
+
+
+#### tf.transpose
+
+```
+tf.transpose(
+    a,
+    perm=None,
+    name='transpose',
+    conjugate=False
+)
+```
+
+置换 a,根据 perm 重新排列尺寸.
+
+返回的张量的维度 i 将对应于输入维度 perm[i].如果 perm 没有给出,它被设置为(n-1 ... 0),其中 n 是输入张量的秩.因此,默认情况下,此操作在二维输入张量上执行常规矩阵转置.如果共轭为 True,并且 a.dtype 是 complex64 或 complex128,那么 a 的值是共轭转置和.
+
+例如：
+
+```
+x = tf.constant([[1, 2, 3], [4, 5, 6]])
+tf.transpose(x)  # [[1, 4]
+                 #  [2, 5]
+                 #  [3, 6]]
+
+# Equivalently
+tf.transpose(x, perm=[1, 0])  # [[1, 4]
+                              #  [2, 5]
+                              #  [3, 6]]
+
+# If x is complex, setting conjugate=True gives the conjugate transpose
+x = tf.constant([[1 + 1j, 2 + 2j, 3 + 3j],
+                 [4 + 4j, 5 + 5j, 6 + 6j]])
+tf.transpose(x, conjugate=True)  # [[1 - 1j, 4 - 4j],
+                                 #  [2 - 2j, 5 - 5j],
+                                 #  [3 - 3j, 6 - 6j]]
+
+# 'perm' is more useful for n-dimensional tensors, for n > 2
+x = tf.constant([[[ 1,  2,  3],
+                  [ 4,  5,  6]],
+                 [[ 7,  8,  9],
+                  [10, 11, 12]]])
+
+# Take the transpose of the matrices in dimension-0
+# (this common operation has a shorthand `matrix_transpose`)
+tf.transpose(x, perm=[0, 2, 1])  # [[[1,  4],
+                                 #   [2,  5],
+                                 #   [3,  6]],
+                                 #  [[7, 10],
+                                 #   [8, 11],
+                                 #   [9, 12]]]
+```
+
+函数参数：
+
+- a：一个 Tensor.
+- perm：a 的维数的排列.
+- name：操作的名称(可选).
+- conjugate：可选 bool,将其设置为 True 在数学上等同于 tf.conj(tf.transpose(input)).
+
+返回：
+
+tf.transpose 函数返回一个转置 Tensor.

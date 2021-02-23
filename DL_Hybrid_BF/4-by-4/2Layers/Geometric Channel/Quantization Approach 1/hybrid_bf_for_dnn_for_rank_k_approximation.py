@@ -85,7 +85,8 @@ def loss1(y_true, y_pred):
     v_pred = []
     u_pred = []
 
-    # Real and imaginary components of real and estimated vectorized channel are seperated into different vectors at the beginning.
+    # Real and imaginary components of real and estimated vectorized channel
+    # are seperated into different vectors at the beginning.
     y_pred = y_pred[:, :L * 2 + 2 * (N_T + N_R) * L]
 
     y_real_pred = y_pred[:, L * 2:L * 2 + (N_T + N_R) * L]
@@ -107,7 +108,8 @@ def loss1(y_true, y_pred):
     for i in range(L):
         sigma_pred_temp = tf.complex((y_pred[:, 2 * i]), tf.cast(0.0, tf.float32))
         sigma_pred.append(sigma_pred_temp)
-        v_pred_temp = tf.complex(y_real_pred[:, i * N_T:(i + 1) * N_T], y_imag_pred[:, i * N_T:(i + 1) * N_T])
+        v_pred_temp = tf.complex(y_real_pred[:, i * N_T:(i + 1) * N_T],
+                                 y_imag_pred[:, i * N_T:(i + 1) * N_T])
         u_pred_temp = tf.complex(y_real_pred[:, i * N_R + N_T * L:(i + 1) * N_R + N_T * L],
                                  y_imag_pred[:, i * N_R + N_T * L:(i + 1) * N_R + N_T * L])
         v_pred.append(v_pred_temp[:, :])
@@ -117,19 +119,22 @@ def loss1(y_true, y_pred):
     v_pred = tf.stack(v_pred, axis=2)
     sigma_pred = tf.stack(sigma_pred, axis=1)
 
-    # Based on estimated singular values, diagonal singular values matrix is constructed.
+    # Based on estimated singular values,
+    # diagonal singular values matrix is constructed.
     sigma_pred_final = []
     for i in range(batch_size):
         sigma_pred_final.append(tf.linalg.tensor_diag(sigma_pred[i, :]))
 
     sigma_pred_final = tf.stack(sigma_pred_final, axis=0)
 
-    # Estimated rank-k aproximation of channel using estimated singular values, precoder and combiner by DNN
+    # Estimated rank-k aproximation of channel using estimated singular values,
+    # precoder and combiner by DNN
     chan_app_pred = tf.matmul(u_pred, tf.matmul(sigma_pred_final, tf.transpose(v_pred, conjugate=True, perm=[0, 2, 1])))
 
     # Norm of real rank-k approximation is calculated for normalization of loss
     err_norm2 = tf.sqrt(tf.reduce_sum(tf.square(tf.abs(chan_app_true)), axis=[1, 2]))
 
+    # 公式中三个部分的误差分别求到
     # Difference between real and estimated rank-k approximations of channel matrices for the selected mini-batch
     diff = tf.sqrt(tf.reduce_sum(tf.square(tf.abs((chan_app_pred - chan_app_true))), axis=[1, 2]))
 
@@ -141,6 +146,7 @@ def loss1(y_true, y_pred):
     orthogonality_constraint_for_v = tf.matmul(v_pred, tf.transpose(v_pred, conjugate=True, perm=[0, 2, 1])) - tf.eye(
         N_T, dtype=tf.complex64)
 
+    # 将三个误差进行汇总
     # Loss is computed and averaged over channel matrices in the selected mini-batch
     err = tf.reduce_mean((diff / err_norm2) + lambda1 * tf.sqrt(
         tf.reduce_sum(tf.square(tf.abs(orthogonality_constraint_for_u)), axis=[1, 2])) + lambda2 * tf.sqrt(
@@ -194,25 +200,25 @@ def model(input_shape, input_shape2, n_y):
     X_temp = Dense(2 * L, activation='linear')(X)
     # Unconstrained estimated RF precoder (T_RF), baseband precoder (T_BB), RF combiner (R_RF), baseband combiner (R_BB)
     # T_opt= T_RF*T_BB   R_opt= R_RF*R_BB
-    T_RF = Dense(n_y - 2 * L)(X)
+    T_RF = Dense(n_y - 2 * L)(X) #输出为64空间维度，由于没有指定激活函数，默认使用的是线性激活a(x) = x
     T_RF = ELU(alpha=1.0)(T_RF)
     T_RF = Dropout(0.1)(T_RF)
-    T_RF = Dense(((n_y - 2 * L) // 4), activation='sigmoid')(T_RF)
+    T_RF = Dense(((n_y - 2 * L) // 4), activation='sigmoid')(T_RF) # [2*L,N_T*L_T) 16
 
     T_BB = Dense(n_y - 2 * L)(X)
     T_BB = ELU(alpha=1.0)(T_BB)
     T_BB = Dropout(0.1)(T_BB)
-    T_BB = Dense(((n_y - 2 * L) // 2), activation='linear')(T_BB)
+    T_BB = Dense(((n_y - 2 * L) // 2), activation='linear')(T_BB) # [N_T*L_T,2*N_S*L_T) 32
 
     R_RF = Dense(n_y - 2 * L)(X)
     R_RF = ELU(alpha=1.0)(R_RF)
     R_RF = Dropout(0.1)(R_RF)
-    R_RF = Dense(((n_y - 2 * L) // 4), activation='sigmoid')(R_RF)
+    R_RF = Dense(((n_y - 2 * L) // 4), activation='sigmoid')(R_RF)# [2*L*L_T,N_R*L_R) 16
 
     R_BB = Dense(n_y - 2 * L)(X)
     R_BB = ELU(alpha=1.0)(R_BB)
     R_BB = Dropout(0.1)(R_BB)
-    R_BB = Dense(((n_y - 2 * L) // 2), activation='linear')(R_BB)
+    R_BB = Dense(((n_y - 2 * L) // 2), activation='linear')(R_BB) # [N_R*L_R,2*N_S*L_R) 32
 
     X_in = concatenate([X_temp, T_RF, T_BB, R_RF, R_BB], axis=1)
 
@@ -260,9 +266,10 @@ def myFunc(x_in):
     # Implement piece-wise linear approximations based quantization (quantization approach 1) and generate constrained T_RF and R_RF
 
     # Transform phase values to between 0 and 2^n_Q
-    T_RF_angle_rad = 2 * tf.constant(matt.pi) * (T_RF)
-    # 2^Nq*T_RF
-    kq = T_RF_angle_rad / (2 * tf.constant(matt.pi) / Num_directions)
+    # todo  公式的推导过程
+    T_RF_angle_radin = 2 * tf.constant(matt.pi) * (T_RF)
+    kq = T_RF_angle_radin / (2 * tf.constant(matt.pi) / Num_directions)
+
     # Phase values in this region are rounded to 0.
     kq_new = tf.where(kq <= 1 - alpha, tf.floor(kq), kq)
     # Depending on alpha value, phase values between (i-alpha) and (i+alpha) are kept same,
@@ -272,19 +279,19 @@ def myFunc(x_in):
     # If phase values are between 2^N_q-1 and 2^n_Q, they are kept same.
     kq_new = tf.where(tf.logical_and(kq > ((Num_directions - 1) + alpha), kq <= Num_directions), kq, kq_new)
     # Transform phase values to between 0 and 2*pi
-    T_RF_angle_rad = kq_new * (2 * tf.constant(matt.pi) / Num_directions)
+    T_RF_angle_radin = kq_new * (2 * tf.constant(matt.pi) / Num_directions)
     # value and constant modulus=(1/sqrt(N_T))
-    T_RF = tf.sqrt(tf.cast((1.0 / N_T), dtype=tf.complex64)) * tf.exp(tf.complex(0.0, T_RF_angle_rad))  # Complex elements of T_RF are constructed with calculated phase
+    T_RF = tf.sqrt(tf.cast((1.0 / N_T), dtype=tf.complex64)) * tf.exp(tf.complex(0.0, T_RF_angle_radin))  # Complex elements of T_RF are constructed with calculated phase
 
     # Transform phase values to between 0 and 2^n_Q
-    R_RF_angle_rad = 2 * tf.constant(matt.pi) * (R_RF)
-    kq = R_RF_angle_rad / (2 * tf.constant(matt.pi) / Num_directions)
+    R_RF_angle_radin = 2 * tf.constant(matt.pi) * (R_RF)
+    kq = R_RF_angle_radin / (2 * tf.constant(matt.pi) / Num_directions)
     kq_new = tf.where(kq <= 1 - alpha, tf.floor(kq), kq)
     for i in range(Num_directions - 2):
         kq_new = tf.where(tf.logical_and(kq > ((i + 1) + alpha), kq <= ((i + 2) - alpha)), tf.floor(kq), kq_new)
     kq_new = tf.where(tf.logical_and(kq > ((Num_directions - 1) + alpha), kq <= Num_directions), kq, kq_new)
-    R_RF_angle_rad = kq_new * (2 * tf.constant(matt.pi) / Num_directions)
-    R_RF = tf.sqrt(tf.cast((1.0 / N_R), dtype=tf.complex64)) * tf.exp(tf.complex(0.0,R_RF_angle_rad))  # Complex elements of R_RF are constructed with calculated phase value and constant modulus=(1/sqrt(N_R))
+    R_RF_angle_radin = kq_new * (2 * tf.constant(matt.pi) / Num_directions)
+    R_RF = tf.sqrt(tf.cast((1.0 / N_R), dtype=tf.complex64)) * tf.exp(tf.complex(0.0,R_RF_angle_radin))  # Complex elements of R_RF are constructed with calculated phase value and constant modulus=(1/sqrt(N_R))
 
     # T_RF is constructed as matrix
     T_RF_tmp = []
@@ -416,16 +423,11 @@ L = 4  # Number of data streams
 # generated using geometric channel model
 # paper 11页  声明了
 # Each of the three proposed DNNs for computing the SVD gets the matrix with a size of NR× 2NT as the input.
-#
-# 40000*4*8     40000*4*（2*4）
 C_train = np.load('../../../../../Dataset/C_44_train.npy')
-#  40000*32
 D_train = np.load('../../../../../Dataset/D_44_train.npy')
-#  40000*4*8    40000*4*（2*4）
 X_train = np.load('../../../../../Dataset/X_44_train.npy')
 #  40000*72  todo 这个的结构需要理清楚
 Y_train = np.load('../../../../../Dataset/Y_44_train.npy')
-#  40000*32
 Z_train = np.load('../../../../../Dataset/Z_44_train.npy')
 
 C_test = np.load('../../../../../Dataset/C_44_test.npy')
@@ -457,21 +459,18 @@ X_train2 = np.zeros(shape_X)  # This input stores real channel matrix normalized
 # this is given to the DNN as the input.
 X_train2[:, :, :, 0] = temp_X_train
 
-Z_train2 = np.zeros(
-    (m_train, n_H * n_W, 1))  # This input stores each rank-1 approximation of channel matrix seperately.
+Z_train2 = np.zeros((m_train, n_H * n_W, 1))  # This input stores each rank-1 approximation of channel matrix seperately.
 Z_train2[:, :, 0] = np.squeeze(temp_Z_train)
 Z_train2_out = np.squeeze(Z_train2[:, :, 0])
 
-Y_train2 = np.squeeze(
-    temp_Y_train)  # Output for the DNN, this has singular values and vectors for given channel matrix.
+Y_train2 = np.squeeze(temp_Y_train)  # Output for the DNN, this has singular values and vectors for given channel matrix.
 H_train2 = np.zeros(shape_X)
 H_train2[:, :, :, 0] = temp_H  # This input stores real channel matrix, it is used for estimating rate.
 H_train2_out = np.squeeze(temp_H_out)  # This output stores real channel matrix, it is used for estimating rate.
 
 # Prepare input and output for test data.
 shape_X_Test = (m_test, n_H, n_W, 1)
-X_test2 = np.zeros(
-    shape_X_Test)  # This input stores real channel matrix normalized to values between -1 and 1, this is given to the DNN as the input.
+X_test2 = np.zeros(shape_X_Test)  # This input stores real channel matrix normalized to values between -1 and 1, this is given to the DNN as the input.
 X_test2[:, :, :, 0] = temp_X_Test
 Z_test2 = np.zeros((m_test, n_H * n_W, 1))
 Z_test2[:, :, 0] = np.squeeze(temp_Z_Test)  # This input stores each rank-1 approximation of channel matrix seperately.
@@ -491,8 +490,7 @@ alpha = tf.placeholder(tf.float32)
 temp_alpha = tf.zeros_like(alpha)
 temp_alpha = sess.run(temp_alpha, feed_dict={alpha: 0.05})
 
-# todo  此处的第三个参数的含义  paper
-model_out = model(input_shape3, input_shape33, 2 * (N_T + N_R + 1) * L)
+model_out = model(input_shape3, input_shape33, 2 * L + 2 * (N_T + N_R))
 
 batch_size = 32
 
@@ -533,10 +531,12 @@ for i in range(1000):
     data_shuffle_x_test = [data_shuffle_X_test2, data_shuffle_Z_test2, data_shuffle_H_test2]
     data_shuffle_y_test = np.concatenate((data_shuffle_Y_test2, data_shuffle_Z_test2_out, data_shuffle_H_test2_out),axis=1)
 
+    # train
     temp_alpha = tf.zeros_like(alpha)
     temp_alpha = sess.run(temp_alpha, feed_dict={alpha: 0.05})
     train_error = model_out.train_on_batch(data_shuffle_x, data_shuffle_y)
 
+    # test
     temp_alpha = tf.zeros_like(alpha)
     temp_alpha = sess.run(temp_alpha, feed_dict={alpha: 0.0})
     test_error = model_out.test_on_batch(data_shuffle_x_test, data_shuffle_y_test)
