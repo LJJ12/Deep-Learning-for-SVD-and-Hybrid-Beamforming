@@ -23,9 +23,12 @@ def log2(x):
     return numerator / denominator
 
 
-# This function estimates the rate obtained with the estimated beamformers by the DNN based on rank-k approximation
+# This function estimates the rate obtained with the estimated beamformers
+# by the DNN based on rank-k approximation
 def estimated_rate(y_hat):
-    Pr_avg = 1.4574e-10  # Average received power used in generated dataset for geometric channel model, it should be changed when the average received power of generated channel matrices are changed accordingly.
+    Pr_avg = 1.4574e-10  # Average received power used in generated dataset for geometric channel model,
+    # it should be changed when the average received power of generated channel matrices are
+    # changed accordingly.
     SNR = 1  # Linear SNR value, rate in 0 dB is achieved in this case. In general, SNR=10*log10(SNR in dB)
     No = Pr_avg / SNR  # Noise power
     Num_data_stream = L
@@ -48,7 +51,8 @@ def estimated_rate(y_hat):
 
     H_temp = tf.stack(H_temp, axis=2)
 
-    # Estimated precoder and combiner at the Tx and the Rx are reshaped as matrices from their vectorized versions.
+    # Estimated precoder and combiner at the Tx and the Rx are
+    # reshaped as matrices from their vectorized versions.
     for i in range(L):
         temp_v = tf.complex(y_real_pred[:, i * N_T:(i + 1) * N_T], y_imag_pred[:, i * N_T:(i + 1) * N_T])
         temp_u = tf.complex(y_real_pred[:, i * N_R + N_T * L:(i + 1) * N_R + N_T * L],
@@ -62,7 +66,8 @@ def estimated_rate(y_hat):
     # Covariance of combiners is calculated
     CovMat_pred = tf.matmul(tf.transpose(u_pred, conjugate=True, perm=[0, 2, 1]), u_pred)
 
-    # Rate corresponding to each channel matrice in the mini-batch is calculated, and stored in R_Temp_pred
+    # Rate corresponding to each channel matrice in the mini-batch is calculated,
+    # and stored in R_Temp_pred
     Temp_pred = tf.cast(tf.sqrt(Pr_avg / Num_data_stream), tf.complex64) * tf.matmul(
         tf.matmul(tf.transpose(u_pred, conjugate=True, perm=[0, 2, 1]), H_temp), v_pred)
     Temp_pred2 = (1 / No) * tf.matmul(
@@ -71,14 +76,14 @@ def estimated_rate(y_hat):
 
     R_Temp_pred = tf.eye(Num_data_stream, dtype=tf.complex64) + Temp_pred2
 
-    # Rate is averaged for the selected mini-batch
+    # Rate is averaged for the selected  mini-batch
     R_pred = tf.reduce_mean(tf.abs(log2(tf.matrix_determinant(R_Temp_pred))))
 
     return R_pred
 
 
 def loss1(y_true, y_pred):
-    # Non-negative constants for penalty terms in loss function
+    # Non-negative constants for penalty terms in loss function  paper 5
     lambda1 = 0.1
     lambda2 = 0.1
 
@@ -88,7 +93,7 @@ def loss1(y_true, y_pred):
     # Real and imaginary components of real and estimated vectorized channel
     # are seperated into different vectors at the beginning.
     y_pred = y_pred[:, :L * 2 + 2 * (N_T + N_R) * L]
-
+    #  对应了在量化完成后，所拼接的输出格式
     y_real_pred = y_pred[:, L * 2:L * 2 + (N_T + N_R) * L]
     y_imag_pred = y_pred[:, L * 2 + (N_T + N_R) * L:L * 2 + 2 * (N_T + N_R) * L]
 
@@ -134,7 +139,7 @@ def loss1(y_true, y_pred):
     # Norm of real rank-k approximation is calculated for normalization of loss
     err_norm2 = tf.sqrt(tf.reduce_sum(tf.square(tf.abs(chan_app_true)), axis=[1, 2]))
 
-    # 公式中三个部分的误差分别求到
+    # 公式中三个部分的误差分别求
     # Difference between real and estimated rank-k approximations of channel matrices for the selected mini-batch
     diff = tf.sqrt(tf.reduce_sum(tf.square(tf.abs((chan_app_pred - chan_app_true))), axis=[1, 2]))
 
@@ -149,13 +154,15 @@ def loss1(y_true, y_pred):
     # 将三个误差进行汇总
     # Loss is computed and averaged over channel matrices in the selected mini-batch
     err = tf.reduce_mean((diff / err_norm2) + lambda1 * tf.sqrt(
-        tf.reduce_sum(tf.square(tf.abs(orthogonality_constraint_for_u)), axis=[1, 2])) + lambda2 * tf.sqrt(
-        tf.reduce_sum(tf.square(tf.abs(orthogonality_constraint_for_v)), axis=[1, 2])))
+        tf.reduce_sum(tf.square(tf.abs(orthogonality_constraint_for_u)), axis=[1, 2]))
+                         + lambda2 * tf.sqrt(tf.reduce_sum(tf.square(tf.abs(orthogonality_constraint_for_v)), axis=[1, 2])))
 
     return err
 
-def loss2(y_true,y_pred):
-    loss2="this is the loss2"
+
+def loss2(y_true, y_pred):
+    loss2 = "this is the loss2"
+
 
 # CNN based DNN for rank-k approximation
 def model(input_shape, input_shape2, n_y):
@@ -200,25 +207,25 @@ def model(input_shape, input_shape2, n_y):
     X_temp = Dense(2 * L, activation='linear')(X)
     # Unconstrained estimated RF precoder (T_RF), baseband precoder (T_BB), RF combiner (R_RF), baseband combiner (R_BB)
     # T_opt= T_RF*T_BB   R_opt= R_RF*R_BB
-    T_RF = Dense(n_y - 2 * L)(X) #输出为64空间维度，由于没有指定激活函数，默认使用的是线性激活a(x) = x
+    T_RF = Dense(n_y - 2 * L)(X)  # 输出为64空间维度，由于没有指定激活函数，默认使用的是线性激活a(x) = x
     T_RF = ELU(alpha=1.0)(T_RF)
     T_RF = Dropout(0.1)(T_RF)
-    T_RF = Dense(((n_y - 2 * L) // 4), activation='sigmoid')(T_RF) # [2*L,N_T*L_T) 16
+    T_RF = Dense(((n_y - 2 * L) // 4), activation='sigmoid')(T_RF)  # [2*L,N_T*L_T) 16
 
     T_BB = Dense(n_y - 2 * L)(X)
     T_BB = ELU(alpha=1.0)(T_BB)
     T_BB = Dropout(0.1)(T_BB)
-    T_BB = Dense(((n_y - 2 * L) // 2), activation='linear')(T_BB) # [N_T*L_T,2*N_S*L_T) 32
+    T_BB = Dense(((n_y - 2 * L) // 2), activation='linear')(T_BB)  # [N_T*L_T,2*N_S*L_T) 32
 
     R_RF = Dense(n_y - 2 * L)(X)
     R_RF = ELU(alpha=1.0)(R_RF)
     R_RF = Dropout(0.1)(R_RF)
-    R_RF = Dense(((n_y - 2 * L) // 4), activation='sigmoid')(R_RF)# [2*L*L_T,N_R*L_R) 16
+    R_RF = Dense(((n_y - 2 * L) // 4), activation='sigmoid')(R_RF)  # [2*L*L_T,N_R*L_R) 16
 
     R_BB = Dense(n_y - 2 * L)(X)
     R_BB = ELU(alpha=1.0)(R_BB)
     R_BB = Dropout(0.1)(R_BB)
-    R_BB = Dense(((n_y - 2 * L) // 2), activation='linear')(R_BB) # [N_R*L_R,2*N_S*L_R) 32
+    R_BB = Dense(((n_y - 2 * L) // 2), activation='linear')(R_BB)  # [N_R*L_R,2*N_S*L_R) 32
 
     X_in = concatenate([X_temp, T_RF, T_BB, R_RF, R_BB], axis=1)
 
@@ -243,9 +250,9 @@ def model3(input_shape, input_shape2, n_y):
 # Use 1-bit phase shifters and piece-wise linear approximations based quantization
 def myFunc(x_in):
     Nq_bits = 1  # number of bit in phase shifter
+    # γ =》 α
     alpha = temp_alpha  # this value determines the region which is defined by a piece-wise linear function.
     N_S = L
-
     Num_directions = pow(2, Nq_bits)
 
     x_temp = x_in[:, 0:2 * L]
@@ -253,7 +260,8 @@ def myFunc(x_in):
     T_RF = x_in[:, 2 * L:2 * L + N_T * L_T]
     T_BB = x_in[:, 2 * L + N_T * L_T:2 * L + N_T * L_T + 2 * N_S * L_T]
     R_RF = x_in[:, 2 * L + N_T * L_T + 2 * N_S * L_T:2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R]
-    R_BB = x_in[:, 2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R:2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R + 2 * N_S * L_R]
+    R_BB = x_in[:,
+           2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R:2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R + 2 * N_S * L_R]
 
     sigma_hat = x_temp
 
@@ -266,12 +274,13 @@ def myFunc(x_in):
     # Implement piece-wise linear approximations based quantization (quantization approach 1) and generate constrained T_RF and R_RF
 
     # Transform phase values to between 0 and 2^n_Q
-    # todo  公式的推导过程
+    #   公式的推导过程  αi = 2*Π*T_RF    T_RF中的是没有处理为0到2Π之间的值
     T_RF_angle_radin = 2 * tf.constant(matt.pi) * (T_RF)
+    # kq = 2^N_q * T_RF  => α= k_q * 2Π/2^N_q
     kq = T_RF_angle_radin / (2 * tf.constant(matt.pi) / Num_directions)
-
+    # n = 1,....,2^N_q - 1  因为使用的是 一个nq所以此处固定为了1=》1-γ=》1-alpha
     # Phase values in this region are rounded to 0.
-    kq_new = tf.where(kq <= 1 - alpha, tf.floor(kq), kq)
+    kq_new = tf.where(kq <= 1 - alpha, tf.floor(kq), kq)  # 公式中的第一个
     # Depending on alpha value, phase values between (i-alpha) and (i+alpha) are kept same,
     # otherwise rounded to largest integer value smaller than itself. Here, i=1,..,2^N_q-1
     for i in range(Num_directions - 2):
@@ -280,8 +289,9 @@ def myFunc(x_in):
     kq_new = tf.where(tf.logical_and(kq > ((Num_directions - 1) + alpha), kq <= Num_directions), kq, kq_new)
     # Transform phase values to between 0 and 2*pi
     T_RF_angle_radin = kq_new * (2 * tf.constant(matt.pi) / Num_directions)
-    # value and constant modulus=(1/sqrt(N_T))
-    T_RF = tf.sqrt(tf.cast((1.0 / N_T), dtype=tf.complex64)) * tf.exp(tf.complex(0.0, T_RF_angle_radin))  # Complex elements of T_RF are constructed with calculated phase
+    # value and constant modulus=(1/sqrt(N_T))  量化完成
+    T_RF = tf.sqrt(tf.cast((1.0 / N_T), dtype=tf.complex64)) * tf.exp(
+        tf.complex(0.0, T_RF_angle_radin))  # Complex elements of T_RF are constructed with calculated phase
 
     # Transform phase values to between 0 and 2^n_Q
     R_RF_angle_radin = 2 * tf.constant(matt.pi) * (R_RF)
@@ -291,7 +301,8 @@ def myFunc(x_in):
         kq_new = tf.where(tf.logical_and(kq > ((i + 1) + alpha), kq <= ((i + 2) - alpha)), tf.floor(kq), kq_new)
     kq_new = tf.where(tf.logical_and(kq > ((Num_directions - 1) + alpha), kq <= Num_directions), kq, kq_new)
     R_RF_angle_radin = kq_new * (2 * tf.constant(matt.pi) / Num_directions)
-    R_RF = tf.sqrt(tf.cast((1.0 / N_R), dtype=tf.complex64)) * tf.exp(tf.complex(0.0,R_RF_angle_radin))  # Complex elements of R_RF are constructed with calculated phase value and constant modulus=(1/sqrt(N_R))
+    R_RF = tf.sqrt(tf.cast((1.0 / N_R), dtype=tf.complex64)) * tf.exp(tf.complex(0.0,
+                                                                                 R_RF_angle_radin))  # Complex elements of R_RF are constructed with calculated phase value and constant modulus=(1/sqrt(N_R))
 
     # T_RF is constructed as matrix
     T_RF_tmp = []
@@ -304,7 +315,7 @@ def myFunc(x_in):
     for i in range(L_R):
         R_RF_tmp.append(R_RF[:, i * N_R:(i + 1) * N_R])
     R_RF_tmp = tf.stack(R_RF_tmp, axis=2)
-
+    # constructed T_BB R_BB as matrix
     T_BB = tf.complex(T_BB_real[:, :], T_BB_imag[:, :])
     R_BB = tf.complex(R_BB_real[:, :], R_BB_imag[:, :])
 
@@ -317,12 +328,12 @@ def myFunc(x_in):
     T_BB_tmp = tf.stack(T_BB_tmp, axis=2)
     R_BB_tmp = tf.stack(R_BB_tmp, axis=2)
 
-    # Implement normalization layers and generate constrained T_BB and R_BB
+    # Implement normalization layers and generate constrained T_BB and R_BB  paper15
     T_BB_tmp = tf.sqrt(tf.cast(N_S, dtype=tf.complex64)) * T_BB_tmp / tf.expand_dims(
         tf.expand_dims(tf.norm(tf.matmul(T_RF_tmp, T_BB_tmp), axis=[1, 2]), axis=1), axis=2)
     R_BB_tmp = tf.sqrt(tf.cast(N_S, dtype=tf.complex64)) * R_BB_tmp / tf.expand_dims(
         tf.expand_dims(tf.norm(tf.matmul(R_RF_tmp, R_BB_tmp), axis=[1, 2]), axis=1), axis=2)
-
+    # Topt = T_BB*T_RF 和  Ropt = R_BB * R_RF
     F = tf.matmul(T_RF_tmp, T_BB_tmp)
     R = tf.matmul(R_RF_tmp, R_BB_tmp)
 
@@ -352,7 +363,8 @@ def myFunc2(x_in):
     T_RF = x_in[:, 2 * L:2 * L + N_T * L_T]
     T_BB = x_in[:, 2 * L + N_T * L_T:2 * L + N_T * L_T + 2 * N_S * L_T]
     R_RF = x_in[:, 2 * L + N_T * L_T + 2 * N_S * L_T:2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R]
-    R_BB = x_in[:,2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R:2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R + 2 * N_S * L_R]
+    R_BB = x_in[:,
+           2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R:2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R + 2 * N_S * L_R]
 
     sigma_hat = x_temp
 
@@ -376,7 +388,8 @@ def myFunc3(x_in):
     T_RF = x_in[:, 2 * L:2 * L + N_T * L_T]
     T_BB = x_in[:, 2 * L + N_T * L_T:2 * L + N_T * L_T + 2 * N_S * L_T]
     R_RF = x_in[:, 2 * L + N_T * L_T + 2 * N_S * L_T:2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R]
-    R_BB = x_in[:,2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R:2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R + 2 * N_S * L_R]
+    R_BB = x_in[:,
+           2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R:2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R + 2 * N_S * L_R]
 
     sigma_hat = x_temp
 
@@ -400,7 +413,8 @@ def myFunc4(x_in):
     T_RF = x_in[:, 2 * L:2 * L + N_T * L_T]
     T_BB = x_in[:, 2 * L + N_T * L_T:2 * L + N_T * L_T + 2 * N_S * L_T]
     R_RF = x_in[:, 2 * L + N_T * L_T + 2 * N_S * L_T:2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R]
-    R_BB = x_in[:,2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R:2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R + 2 * N_S * L_R]
+    R_BB = x_in[:,
+           2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R:2 * L + N_T * L_T + 2 * N_S * L_T + N_R * L_R + 2 * N_S * L_R]
 
     sigma_hat = x_temp
 
@@ -426,7 +440,6 @@ L = 4  # Number of data streams
 C_train = np.load('../../../../../Dataset/C_44_train.npy')
 D_train = np.load('../../../../../Dataset/D_44_train.npy')
 X_train = np.load('../../../../../Dataset/X_44_train.npy')
-#  40000*72  todo 这个的结构需要理清楚
 Y_train = np.load('../../../../../Dataset/Y_44_train.npy')
 Z_train = np.load('../../../../../Dataset/Z_44_train.npy')
 
@@ -453,24 +466,26 @@ m_train, n_H, n_W = temp_X_train.shape
 m_test, _, _ = temp_X_Test.shape
 
 # Prepare input and output for training data.
-# 为何不直接使用shape=>(m_train,n_H,n_W) =》 cnn输入的时候需要四维数据
 shape_X = (m_train, n_H, n_W, 1)
 X_train2 = np.zeros(shape_X)  # This input stores real channel matrix normalized to values between -1 and 1,
 # this is given to the DNN as the input.
 X_train2[:, :, :, 0] = temp_X_train
 
-Z_train2 = np.zeros((m_train, n_H * n_W, 1))  # This input stores each rank-1 approximation of channel matrix seperately.
+Z_train2 = np.zeros(
+    (m_train, n_H * n_W, 1))  # This input stores each rank-1 approximation of channel matrix seperately.
 Z_train2[:, :, 0] = np.squeeze(temp_Z_train)
 Z_train2_out = np.squeeze(Z_train2[:, :, 0])
 
-Y_train2 = np.squeeze(temp_Y_train)  # Output for the DNN, this has singular values and vectors for given channel matrix.
+Y_train2 = np.squeeze(
+    temp_Y_train)  # Output for the DNN, this has singular values and vectors for given channel matrix.
 H_train2 = np.zeros(shape_X)
 H_train2[:, :, :, 0] = temp_H  # This input stores real channel matrix, it is used for estimating rate.
 H_train2_out = np.squeeze(temp_H_out)  # This output stores real channel matrix, it is used for estimating rate.
 
 # Prepare input and output for test data.
 shape_X_Test = (m_test, n_H, n_W, 1)
-X_test2 = np.zeros(shape_X_Test)  # This input stores real channel matrix normalized to values between -1 and 1, this is given to the DNN as the input.
+X_test2 = np.zeros(
+    shape_X_Test)  # This input stores real channel matrix normalized to values between -1 and 1, this is given to the DNN as the input.
 X_test2[:, :, :, 0] = temp_X_Test
 Z_test2 = np.zeros((m_test, n_H * n_W, 1))
 Z_test2[:, :, 0] = np.squeeze(temp_Z_Test)  # This input stores each rank-1 approximation of channel matrix seperately.
@@ -490,7 +505,7 @@ alpha = tf.placeholder(tf.float32)
 temp_alpha = tf.zeros_like(alpha)
 temp_alpha = sess.run(temp_alpha, feed_dict={alpha: 0.05})
 
-model_out = model(input_shape3, input_shape33, 2 * L + 2 * (N_T + N_R))
+model_out = model(input_shape3, input_shape33, 2*(N_T+N_R+1)*L)
 
 batch_size = 32
 
@@ -514,22 +529,24 @@ for i in range(1000):
     np.random.shuffle(idx_test)
     idx = idx[:batch_size]
     idx_test = idx_test[:batch_size]
-    data_shuffle_X_train2 = X_train2[idx, :, :, :]
-    data_shuffle_H_train2 = H_train2[idx, :, :, :]
-    data_shuffle_Z_train2 = Z_train2[idx, :, :]
-    data_shuffle_Y_train2 = Y_train2[idx, :]
-    data_shuffle_Z_train2_out = Z_train2_out[idx, :]
-    data_shuffle_H_train2_out = H_train2_out[idx, :]
+    data_shuffle_X_train2 = X_train2[idx, :, :, :] # 32 4 8 1
+    data_shuffle_H_train2 = H_train2[idx, :, :, :] # 32 4 8 1
+    data_shuffle_Z_train2 = Z_train2[idx, :, :] #32 32 1
+    data_shuffle_Y_train2 = Y_train2[idx, :] # 32 72
+    data_shuffle_Z_train2_out = Z_train2_out[idx, :] # 32 72
+    data_shuffle_H_train2_out = H_train2_out[idx, :] # 32 72
     data_shuffle_X_test2 = X_test2[idx_test, :, :, :]
     data_shuffle_H_test2 = H_test2[idx_test, :, :, :]
     data_shuffle_Z_test2 = Z_test2[idx_test, :, :]
     data_shuffle_Y_test2 = Y_test2[idx_test, :]
     data_shuffle_Z_test2_out = Z_test2_out[idx_test, :]
     data_shuffle_H_test2_out = H_test2_out[idx_test, :]
-    data_shuffle_x = [data_shuffle_X_train2, data_shuffle_Z_train2, data_shuffle_H_train2]
-    data_shuffle_y = np.concatenate((data_shuffle_Y_train2, data_shuffle_Z_train2_out, data_shuffle_H_train2_out),axis=1)
+    data_shuffle_x = [data_shuffle_X_train2, data_shuffle_Z_train2, data_shuffle_H_train2] # （32，4，8，1） （32，32，1） （32，4，8，1）
+    data_shuffle_y = np.concatenate((data_shuffle_Y_train2, data_shuffle_Z_train2_out, data_shuffle_H_train2_out),
+                                    axis=1)
     data_shuffle_x_test = [data_shuffle_X_test2, data_shuffle_Z_test2, data_shuffle_H_test2]
-    data_shuffle_y_test = np.concatenate((data_shuffle_Y_test2, data_shuffle_Z_test2_out, data_shuffle_H_test2_out),axis=1)
+    data_shuffle_y_test = np.concatenate((data_shuffle_Y_test2, data_shuffle_Z_test2_out, data_shuffle_H_test2_out),
+                                         axis=1)
 
     # train
     temp_alpha = tf.zeros_like(alpha)
